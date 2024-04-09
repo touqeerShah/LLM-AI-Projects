@@ -22,7 +22,7 @@ pip3 install langchain-openai
 pip3 install -q ragas
 pip3 install gpt4all
 
-
+python3 -m pip install python-pptx
 
 
 question for slides

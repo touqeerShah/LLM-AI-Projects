@@ -9,6 +9,8 @@ from pypdf import PdfReader
 from tqdm import tqdm
 from langchain.llms import Ollama
 import ollama
+import re
+import json
 
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
@@ -34,11 +36,15 @@ from langchain.callbacks.manager import Callbacks
 from langchain.retrievers.document_compressors.base import BaseDocumentCompressor
 
 from sentence_transformers import CrossEncoder
+
+
 class Document:
     def __init__(self, text, source):
         self.page_content = text
         self.metadata = {"source": source}
-bm25_retriever = BM25Retriever.from_documents([Document("demo","demo")])
+
+
+bm25_retriever = BM25Retriever.from_documents([Document("demo", "demo")])
 ### Multiple Query
 from typing import List
 import logging
@@ -58,19 +64,18 @@ class LineList(BaseModel):
 
 
 class BgeRerank(BaseDocumentCompressor):
-    model_name:str = 'BAAI/bge-reranker-large'
+    model_name: str = "BAAI/bge-reranker-large"
     """Model name to use for reranking."""
     top_n: int = 3
     """Number of documents to return."""
-    model:CrossEncoder = CrossEncoder(model_name)
+    model: CrossEncoder = CrossEncoder(model_name)
     """CrossEncoder instance to use for reranking."""
 
-    def bge_rerank(self,query,docs):
-        model_inputs =  [[query, doc] for doc in docs]
+    def bge_rerank(self, query, docs):
+        model_inputs = [[query, doc] for doc in docs]
         scores = self.model.predict(model_inputs)
         results = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-        return results[:self.top_n]
-
+        return results[: self.top_n]
 
     class Config:
         """Configuration for this pydantic object."""
@@ -106,7 +111,6 @@ class BgeRerank(BaseDocumentCompressor):
             doc.metadata["relevance_score"] = r[1]
             final_results.append(doc)
         return final_results
-    
 
 
 class LineListOutputParser(PydanticOutputParser):
@@ -215,14 +219,13 @@ def load_chroma_gpt(filename, collection_name):
         vectorstore.add_documents(split_docs)
         all_split_docs.extend(split_docs)
 
-
     # ids = [str(i) for i in range(len(chunks))]
 
     # chroma_collection.add(ids=ids, documents=chunks)
     # vectorstore.add_documents(split_docs)
     vectorstore.persist()
     bm25_retriever = BM25Retriever.from_documents(all_split_docs)
-    bm25_retriever.k=10
+    bm25_retriever.k = 10
     return vectorstore
 
 
@@ -282,7 +285,8 @@ def get_best_three_document(original_query, queries, COLLECTION_NAME):
 
     return top_documents
 
-def get_llm_object(COLLECTION_NAME):
+
+def get_llm_object(COLLECTION_NAME, model):
 
     # compression_pipeline = get_compression_pipeline(docs)
     llm = Ollama(
@@ -297,7 +301,36 @@ def get_llm_object(COLLECTION_NAME):
         return_source_documents=False,
     )
     return qa_advanced
-def generate_content_for_query(query, model,COLLECTION_NAME):
+
+
+def generate_presentation_title(query, model, COLLECTION_NAME):
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Analyze the provided query and generate a concise, engaging title for a presentation that captures the query's essence. it length must no more then 9 words  "
+                "Format the output as JSON, including a 'title' key for the presentation title. "
+                "If there are additional relevant details that do not fit into the title but might be useful for understanding or elaborating on the presentation's topic, "
+                "include these under an 'extra' key all details in one line. Ensure the 'title' is succinct and ignore other details ."
+            ),
+        },
+        {
+            "role": "user",
+            "content": query,
+        },  # Replace 'query' with the actual query string
+    ]
+
+    qa_advanced = get_llm_object(COLLECTION_NAME, model)
+    qa_adv_response = qa_advanced(str(messages))
+    title = qa_adv_response[
+        "result"
+    ].strip()  # Stripping to remove any leading/trailing whitespace
+
+    # Now, use 'title' as part of your file name, ensuring it's concise enough to avoid the OSError
+    return title
+
+
+def generate_content_for_query(query, model, COLLECTION_NAME):
     messages = [
         {
             "role": "system",
@@ -305,46 +338,148 @@ def generate_content_for_query(query, model,COLLECTION_NAME):
         },
         {"role": "user", "content": query},
     ]
+    #     messages = [
+    #     {
+    #         "role": "system",
+    #         "content": (
+    #             "Interpret the provided query, explaining its contents and the implications of what is being asked. "
+    #             "Leverage the data available in the vector database to thoroughly understand and explicate the query's meaning. "
+    #             "Ensure your explanation includes: "
+    #             "\n- A clear interpretation of the query's main themes and questions. "
+    #             "\n- Insight into the context or background information that informs the query, as derived from the vector DB. "
+    #             "\n- Any relevant concepts or data from the vector DB that can help clarify the query's meaning or intentions. "
+    #             "\n- Suggestions for further exploration or questions that could arise from the initial query, based on vector DB insights. "
+    #             "\nYour goal is to provide a comprehensive understanding of the query, enhancing the user's grasp of the topic using the vector database's insights."
+    #         )
+    #     },
+    #     {"role": "user", "content": query},
+    # ]
 
     # compression_pipeline = get_compression_pipeline(docs)
-   
-    qa_advanced =get_llm_object(COLLECTION_NAME)
+
+    qa_advanced = get_llm_object(COLLECTION_NAME, model)
     qa_adv_response = qa_advanced(str(messages))
     return qa_adv_response["result"]
 
 
 def augment_multiple_query(question, content, model, COLLECTION_NAME, no_question):
+    # messages = [
+    #     {
+    #         "role": "system",
+    #         "content ": (content)
+    #         + " "
+    #         + "Suggest up to "+str(no_question)+" additional related questions to help them find the information they need, for the provided question. "
+    #         "Suggest only short questions without compound sentences. Suggest a variety of questions that cover different aspects of the topic."
+    #         "Suggest used vector storage which provided to create questions"
+    #         "Make sure they are complete questions, and that they are related to the original question."
+    #         "Output one question per line. Do not number the questions.",
+    #     },
+    #     {"role": "user", "content": question},
+    # ]
     messages = [
         {
             "role": "system",
-            "content ": (content)
-            + " "
-            + "Suggest up to "+str(no_question)+" additional related questions to help them find the information they need, for the provided question. "
-            "Suggest only short questions without compound sentences. Suggest a variety of questions that cover different aspects of the topic."
-            "Suggest used vector storage which provided to create questions"
-            "Make sure they are complete questions, and that they are related to the original question."
-            "Output one question per line. Do not number the questions.",
+            "content": (
+                f"{content} "
+                f"Given the topic provided, generate only {no_question} related questions by utilizing the available data in the vector store. "
+                "These questions should aim to deepen understanding of the topic, offering a wide range of perspectives. "
+                "Follow these guidelines: "
+                "\n- Questions should be simple and direct, avoiding complex or compound sentence structures. "
+                "\n- Ensure a broad coverage by varying the aspects of the topic addressed in each question. "
+                "\n- Use the data in the vector store as a foundation for crafting relevant and insightful questions. "
+                "\n- Each question must be a complete sentence and clearly related to the initial topic. "
+                "\nsuggest only List each question on a new line without any numbering no extra comment needed."
+            ),
         },
         {"role": "user", "content": question},
     ]
-    qa_advanced =get_llm_object(COLLECTION_NAME)
+
+    qa_advanced = get_llm_object(COLLECTION_NAME, model)
 
     qa_adv_response = qa_advanced(str(messages))
     content = qa_adv_response["result"]
-    content = content.split("\n")
-    return  content
+    # Split the content by newline and filter out any empty strings
+    content = [line for line in content.split("\n") if line.strip()]
+    return content
 
 
 def augment_query_generated(query, content, docs, model, COLLECTION_NAME):
-    content = generate_content_for_query(query,model,COLLECTION_NAME)
+    # content = generate_content_for_query(query, model, COLLECTION_NAME)
+    print("\n\n\n\n\n\n\n\n query: ", query + "\n content: ", content)
+    # messages = [
+    #     {"role": "system", "content": content
+    #      +" Suggest if you don't know answer of the query just come up with similar information most related to it"
+    #      "Output should contain enought information which used to create slide and  on answer give title for the slide, based on answer what style summary , chart , or bulit points best to make slide, number of slides to display result, what will be front size  4:3(1280 x 720) so contents fit nicely , Final answer will be title ,slide style,number of slide and front size in json"
+    #      },
+    #     {"role": "user", "content": query},
+    # ]
     messages = [
-        {"role": "system", "content": content +" Suggest if you don't know answer of the query just come up with similar information most related to it"},
-        {"role": "user", "content": query},
+        {
+            "role": "system",
+            "content": (
+                "Provide a thorough answer to the user's query. If the precise answer is unavailable, "
+                "supply closely related information. The response must be detailed enough to explain well "
+                "Specifically, your response should:"
+                "\n1. Contain all the information which he get from query results"
+                """
+                    \n- **Headings**: Use '#' before a heading to denote it. For emphasis, headings can be bolded by enclosing them in '**', not longer then 9 words .
+                    \n- **Bullet Points**: Use '-' to introduce each item in a list.
+                    \n- **Plain Text**: Enclose simple text in double quotes (\").
+                """
+            ),
+        },
+        {"role": "user", "content": query + " " + content},
     ]
-    qa_advanced =get_llm_object(COLLECTION_NAME)
+    qa_advanced = get_llm_object(COLLECTION_NAME, model)
 
     qa_adv_response = qa_advanced(str(messages))
+    return qa_adv_response["result"], content
 
+
+def generate_data_for_ppt(query, content, answer, model, COLLECTION_NAME):
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Based on the provided question, content, and answer, generate detailed specifications for a slide presentation."
+                "Specifically, your output must include: "
+                "\n1. A concise slide title reflecting the main question's theme. it length must no more then 9 words "
+                "\n2. A recommended style for the presentation slides (options include: summary, chart, bullet points) that aligns with the content's nature. "
+                "\n3. The estimated total number of slides needed for a thorough yet succinct presentation. "
+                "\n4. A suitable font size for legibility on slides designed in a 4:3 aspect ratio (1280 x 720 pixels)."
+                "Structure your response as a JSON object with 'title', 'slideStyle', 'numberOfSlides', and 'fontSize' keys for the core details. "
+                "No Need to, compile any supplementary insights or suggestions no need to include anything else just title,slideStyle,numberOfSlides,fontSize "
+            ),
+        },
+        {"role": "user", "question": query, "content": content, "answer": answer},
+    ]
+    qa_advanced = get_llm_object(COLLECTION_NAME, model)
+
+    qa_adv_response = qa_advanced(str(messages))
+    return qa_adv_response["result"]
+
+
+def formate_data_for_ppt(slide_style, number_of_slides, answer, model, COLLECTION_NAME):
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"based on answer make {slide_style} of it and output should be formatted for {number_of_slides} slides"
+            ),
+        },
+        {
+            "role": "user",
+            "content": {
+                "answer": answer,
+            },
+        },
+    ]
+
+    qa_advanced = get_llm_object(COLLECTION_NAME, model)
+
+    qa_adv_response = qa_advanced(str(messages))
     return qa_adv_response["result"]
 
 
@@ -352,7 +487,7 @@ def get_compression_pipeline(COLLECTION_NAME):
     embeddings = GPT4AllEmbeddings()
 
     vectorstore = get_vector_store(COLLECTION_NAME)
-   
+
     vs_retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
     #
 
@@ -375,3 +510,29 @@ def get_compression_pipeline(COLLECTION_NAME):
         base_compressor=pipeline_compressor, base_retriever=ensemble_retriever
     )
     return compression_pipeline
+
+
+def extract_json(text):
+    # Regular expression pattern to match a JSON object
+    # This is a simplified pattern and might need adjustments for complex cases
+    pattern = r"\{(?:[^{}]|(?:\{.*?\}))*\}"
+
+    # Search for JSON object in the text
+    text = text.replace("\n", " ")
+    match = re.search(pattern, text)
+
+    if match:
+        # Extract the matched JSON text
+        json_text = match.group(0)
+
+        try:
+            # Parse the JSON text to a Python dictionary
+            json_obj = json.loads(json_text)
+            return json_obj
+        except json.JSONDecodeError as e:
+            print("Error decoding JSON:", e)
+            return None
+    else:
+        print("No valid JSON object found in the text.")
+
+    return None
