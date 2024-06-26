@@ -91,3 +91,9 @@ prs.save('adjusted_font_size_presentation.pptx')
 
 
 Reference Link = [PDF Reference ](https://www.youtube.com/watch?v=ZN53DrEYwKg)
+
+
+new update 
+change pdf or document data load with this one and test it
+https://docs.llamaindex.ai/en/stable/examples/vector_stores/ChromaIndexDemo/
+https://docs.llamaindex.ai/en/stable/examples/multi_modal/ChromaMultiModalDemo/

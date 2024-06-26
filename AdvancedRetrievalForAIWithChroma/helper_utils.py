@@ -18,9 +18,9 @@ from langchain.chains import RetrievalQA
 
 from sentence_transformers import CrossEncoder
 from langchain.embeddings import GPT4AllEmbeddings
-
+from langchain_community.retrievers import BM25Retriever
 from langchain_community.vectorstores import Chroma
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
+from langchain.retrievers import  EnsembleRetriever
 from langchain_community.document_transformers.embeddings_redundant_filter import (
     EmbeddingsRedundantFilter,
 )
@@ -262,8 +262,8 @@ def get_best_three_document(original_query, queries, COLLECTION_NAME):
     for documents in retrieved_documents:
         for document in documents:
             unique_documents.add(
-                document["content"]
-            )  # Assuming document has 'content' key
+                document["context"]
+            )  # Assuming document has 'context' key
 
     unique_documents = list(unique_documents)
 
@@ -307,8 +307,8 @@ def generate_presentation_title(query, model, COLLECTION_NAME):
     messages = [
         {
             "role": "system",
-            "content": (
-                "Analyze the provided query and generate a concise, engaging title for a presentation that captures the query's essence. it length must no more then 9 words  "
+            "context": (
+                "Analyze the provided query and generate a concise, engaging title for a presentation that captures the query's essence. it length must no more then 8 words and more precise  "
                 "Format the output as JSON, including a 'title' key for the presentation title. "
                 "If there are additional relevant details that do not fit into the title but might be useful for understanding or elaborating on the presentation's topic, "
                 "include these under an 'extra' key all details in one line. Ensure the 'title' is succinct and ignore other details ."
@@ -316,7 +316,7 @@ def generate_presentation_title(query, model, COLLECTION_NAME):
         },
         {
             "role": "user",
-            "content": query,
+            "context": query,
         },  # Replace 'query' with the actual query string
     ]
 
@@ -331,17 +331,18 @@ def generate_presentation_title(query, model, COLLECTION_NAME):
 
 
 def generate_content_for_query(query, model, COLLECTION_NAME):
+    
     messages = [
         {
             "role": "system",
-            "content": "explain the query contents what it query mean? used vector source to answer it.",
+            "context": "explain the query contents what it query mean? used vector source to answer it.",
         },
-        {"role": "user", "content": query},
+        {"role": "user", "context": query},
     ]
     #     messages = [
     #     {
     #         "role": "system",
-    #         "content": (
+    #         "context": (
     #             "Interpret the provided query, explaining its contents and the implications of what is being asked. "
     #             "Leverage the data available in the vector database to thoroughly understand and explicate the query's meaning. "
     #             "Ensure your explanation includes: "
@@ -352,7 +353,7 @@ def generate_content_for_query(query, model, COLLECTION_NAME):
     #             "\nYour goal is to provide a comprehensive understanding of the query, enhancing the user's grasp of the topic using the vector database's insights."
     #         )
     #     },
-    #     {"role": "user", "content": query},
+    #     {"role": "user", "context": query},
     # ]
 
     # compression_pipeline = get_compression_pipeline(docs)
@@ -362,11 +363,11 @@ def generate_content_for_query(query, model, COLLECTION_NAME):
     return qa_adv_response["result"]
 
 
-def augment_multiple_query(question, content, model, COLLECTION_NAME, no_question):
+def augment_multiple_query(question, context, model, COLLECTION_NAME, no_question):
     # messages = [
     #     {
     #         "role": "system",
-    #         "content ": (content)
+    #         "context ": (context)
     #         + " "
     #         + "Suggest up to "+str(no_question)+" additional related questions to help them find the information they need, for the provided question. "
     #         "Suggest only short questions without compound sentences. Suggest a variety of questions that cover different aspects of the topic."
@@ -374,13 +375,13 @@ def augment_multiple_query(question, content, model, COLLECTION_NAME, no_questio
     #         "Make sure they are complete questions, and that they are related to the original question."
     #         "Output one question per line. Do not number the questions.",
     #     },
-    #     {"role": "user", "content": question},
+    #     {"role": "user", "context": question},
     # ]
     messages = [
         {
             "role": "system",
-            "content": (
-                f"{content} "
+            "context": (
+                f"{context} "
                 f"Given the topic provided, generate only {no_question} related questions by utilizing the available data in the vector store. "
                 "These questions should aim to deepen understanding of the topic, offering a wide range of perspectives. "
                 "Follow these guidelines: "
@@ -391,68 +392,78 @@ def augment_multiple_query(question, content, model, COLLECTION_NAME, no_questio
                 "\nsuggest only List each question on a new line without any numbering no extra comment needed."
             ),
         },
-        {"role": "user", "content": question},
+        {"role": "user", "context": question},
     ]
 
     qa_advanced = get_llm_object(COLLECTION_NAME, model)
 
     qa_adv_response = qa_advanced(str(messages))
-    content = qa_adv_response["result"]
-    # Split the content by newline and filter out any empty strings
-    content = [line for line in content.split("\n") if line.strip()]
-    return content
+    context = qa_adv_response["result"]
+    # Split the context by newline and filter out any empty strings
+    context = [line for line in context.split("\n") if line.strip()]
+    return context
 
 
-def augment_query_generated(query, content, docs, model, COLLECTION_NAME):
-    # content = generate_content_for_query(query, model, COLLECTION_NAME)
-    print("\n\n\n\n\n\n\n\n query: ", query + "\n content: ", content)
+def augment_query_generated(query, context, docs, model, COLLECTION_NAME):
+    context = generate_content_for_query(query, model, COLLECTION_NAME)
+    print("\n\n\n\n\n\n\n\n query: ", query + "\n context: ", context)
     # messages = [
-    #     {"role": "system", "content": content
+    #     {"role": "system", "context": context
     #      +" Suggest if you don't know answer of the query just come up with similar information most related to it"
     #      "Output should contain enought information which used to create slide and  on answer give title for the slide, based on answer what style summary , chart , or bulit points best to make slide, number of slides to display result, what will be front size  4:3(1280 x 720) so contents fit nicely , Final answer will be title ,slide style,number of slide and front size in json"
     #      },
-    #     {"role": "user", "content": query},
+    #     {"role": "user", "context": query},
     # ]
     messages = [
         {
             "role": "system",
-            "content": (
+            "context": (
                 "Provide a thorough answer to the user's query. If the precise answer is unavailable, "
                 "supply closely related information. The response must be detailed enough to explain well "
                 "Specifically, your response should:"
                 "\n1. Contain all the information which he get from query results"
                 """
-                    \n- **Headings**: Use '#' before a heading to denote it. For emphasis, headings can be bolded by enclosing them in '**', not longer then 9 words .
+                    \n- **Headings**: Use '#' before a heading to denote it. heading length no more then three or four words.
                     \n- **Bullet Points**: Use '-' to introduce each item in a list.
                     \n- **Plain Text**: Enclose simple text in double quotes (\").
+                    Heading examples: something small like this given examples
+
+                    <<
+                    "Formycon 2023 Financials"
+                    "Asset vs. Liability Insights"
+                    "Formycon Asset-Liability Review"
+                    "2023 Financial Overview"
+                    >>
                 """
             ),
         },
-        {"role": "user", "content": query + " " + content},
+        {"role": "user", "context": query + " " + context},
     ]
+
+    
     qa_advanced = get_llm_object(COLLECTION_NAME, model)
 
     qa_adv_response = qa_advanced(str(messages))
-    return qa_adv_response["result"], content
+    return qa_adv_response["result"], context
 
 
-def generate_data_for_ppt(query, content, answer, model, COLLECTION_NAME):
+def generate_data_for_ppt(query, context, answer, model, COLLECTION_NAME):
 
     messages = [
         {
             "role": "system",
-            "content": (
-                "Based on the provided question, content, and answer, generate detailed specifications for a slide presentation."
+            "context": (
+                "Based on the provided question, context, and answer, generate detailed specifications for a slide presentation."
                 "Specifically, your output must include: "
                 "\n1. A concise slide title reflecting the main question's theme. it length must no more then 9 words "
-                "\n2. A recommended style for the presentation slides (options include: summary, chart, bullet points) that aligns with the content's nature. "
+                "\n2. A recommended style for the presentation slides (options include: summary, chart, bullet points) that aligns with the context's nature. "
                 "\n3. The estimated total number of slides needed for a thorough yet succinct presentation. "
                 "\n4. A suitable font size for legibility on slides designed in a 4:3 aspect ratio (1280 x 720 pixels)."
                 "Structure your response as a JSON object with 'title', 'slideStyle', 'numberOfSlides', and 'fontSize' keys for the core details. "
                 "No Need to, compile any supplementary insights or suggestions no need to include anything else just title,slideStyle,numberOfSlides,fontSize "
             ),
         },
-        {"role": "user", "question": query, "content": content, "answer": answer},
+        {"role": "user", "question": query, "context": context, "answer": answer},
     ]
     qa_advanced = get_llm_object(COLLECTION_NAME, model)
 
@@ -460,18 +471,19 @@ def generate_data_for_ppt(query, content, answer, model, COLLECTION_NAME):
     return qa_adv_response["result"]
 
 
-def formate_data_for_ppt(slide_style, number_of_slides, answer, model, COLLECTION_NAME):
+def formate_data_for_ppt( answer, model, COLLECTION_NAME):
 
     messages = [
         {
             "role": "system",
-            "content": (
-                f"based on answer make {slide_style} of it and output should be formatted for {number_of_slides} slides"
+            "context": (
+                f"""based on answer make generate json object ,
+                No need to add extra details just used what every you get in answer"""
             ),
         },
         {
             "role": "user",
-            "content": {
+            "context": {
                 "answer": answer,
             },
         },
@@ -489,8 +501,8 @@ def get_compression_pipeline(COLLECTION_NAME):
     vectorstore = get_vector_store(COLLECTION_NAME)
 
     vs_retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
-    #
-
+        #
+ 
     ensemble_retriever = EnsembleRetriever(
         retrievers=[bm25_retriever, vs_retriever], weight=[0.5, 0.5]
     )
