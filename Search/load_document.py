@@ -39,7 +39,7 @@ from langchain.chains import RetrievalQA
 import json
 import asyncio
 
-DB_PATH = "./manual-data"
+DB_PATH = "./multimodal_collection"
 
 # Set up RetrievelQA model
 QA_CHAIN_PROMPT = hub.pull("rlm/rag-prompt-mistral")
@@ -57,7 +57,7 @@ embeddings = GPT4AllEmbeddings()
 vectorstore = Chroma(
     embedding_function=GPT4AllEmbeddings(),
     persist_directory=DB_PATH,
-    collection_name="manual-data",
+    collection_name="f23",
 )
 
 
@@ -231,7 +231,7 @@ class StreamingChain:
         self.llm.callbacks = [StreamingHandler(queue)]
 
         def task():
-            self.qa_advanced(str(input))
+            print(len(self.qa_advanced(str(input))["source_documents"]))
 
         self.thread = Thread(target=task)
         self.thread.start()
@@ -253,7 +253,7 @@ class StreamingChain:
 async def main():
     chain = StreamingChain(llm=llm, qa_advanced=qa_advanced)
     token=""
-    for output in chain.stream(input={"content": "Explain Pokémon in 100 characters."}):
+    for output in chain.stream(input={"content": "report about formycon 2023 annual report? also provide of source of which you used to generate this information from metadata"}):
         token+=output
         print(output)
 

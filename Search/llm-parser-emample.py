@@ -1,13 +1,15 @@
-
 import nest_asyncio
 
 nest_asyncio.apply()
-from llama_index.core import SimpleDirectoryReader
 from llama_parse import LlamaParse
 import chromadb
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core import SimpleDirectoryReader, StorageContext
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.core import (
+    SimpleDirectoryReader,
+    StorageContext,
+    VectorStoreIndex,
+    Settings,
+)
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.ollama import Ollama
 
@@ -16,14 +18,15 @@ Settings.llm = Ollama(model="mistral", request_timeout=60.0)
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
 
 parser = LlamaParse(
-    api_key="llx-dpoSbxTyUeM5WuZNr3yNXYynYp2ou42c8JHW8AJYSK9zkBWU",  # can also be set in your env as LLAMA_CLOUD_API_KEY
+    api_key="llx-",  # can also be set in your env as LLAMA_CLOUD_API_KEY
     result_type="markdown",  # "markdown" and "text" are available
     verbose=True,
 )
 
 # sync
 
-DATA_PATH="./manual-data"
+DATA_PATH = "./manual-data"
+
 
 def load_document_in_index():
     file_extractor = {".pdf": parser}
@@ -43,11 +46,12 @@ def load_document_in_index():
     )
     return index.as_query_engine()
 
+
 def load_index():
     db = chromadb.PersistentClient(path=DATA_PATH)
     chroma_collection = db.get_or_create_collection("manual-data")
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    
+
     index = VectorStoreIndex.from_vector_store(
         vector_store,
         embed_model=embed_model,
@@ -55,7 +59,7 @@ def load_index():
     return index.as_query_engine()
 
 
-load_document_in_index();
+load_document_in_index()
 
 # index=load_index()
 # # retriever = index.as_retriever(similarity_top_k=50)
@@ -76,7 +80,7 @@ load_document_in_index();
 #                 "\n5) Results"
 #                 "\n6) Conclusion"
 #                 "\n7) Funding"
-               
+
 #             ),
 #         },
 #         {"role": "user", "query": query },
